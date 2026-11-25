@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MpesaHub</title>
+<style>
+:root{--bg:#f5f7f6;--card:#fff;--tx:#14201a;--mu:#5f6f66;--br:#dbe3de;--pri:#16883f;--err:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1612;--card:#17211b;--tx:#e8f0ea;--mu:#93a499;--br:#2a382f;--pri:#2fb862;--err:#ff7b6b}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--br)}
+h1{font-size:18px;margin:0;color:var(--pri)}main{max-width:900px;margin:20px auto;padding:0 14px}
+.card{background:var(--card);border:1px solid var(--br);border-radius:12px;padding:18px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 12px}label{display:block;font-size:13px;color:var(--mu);margin:10px 0 4px}
+input,select{width:100%;padding:10px;border:1px solid var(--br);border-radius:8px;background:var(--bg);color:var(--tx);font-size:15px}
+button{padding:10px 16px;border:0;border-radius:8px;background:var(--pri);color:#fff;font-size:15px;cursor:pointer;margin-top:14px}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--br);margin:0}
+button.link{background:none;color:var(--pri);padding:0;margin:0;text-decoration:underline}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:600px){.row{grid-template-columns:1fr}}
+.msg{margin-top:10px;font-size:14px}.err{color:var(--err)}.ok{color:var(--pri)}.hide{display:none}
+.chan{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px;border:1px solid var(--br);border-radius:8px;margin-bottom:8px;cursor:pointer}
+.chan.sel{border-color:var(--pri);box-shadow:0 0 0 1px var(--pri)}.chan small{color:var(--mu)}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--br);white-space:nowrap}
+.b{padding:2px 8px;border-radius:10px;font-size:12px;border:1px solid var(--br)}.SUCCESS{color:var(--pri)}.FAILED,.CANCELLED{color:var(--err)}
+</style>
+</head>
+<body>
+<header><h1>MpesaHub</h1><div id="who" class="hide"><span id="uname"></span> <button class="sec" onclick="logout()">Sign out</button></div></header>
+<main>
+<section id="authV" class="card" style="max-width:420px;margin:30px auto">
+  <h2 id="authT">Sign in</h2>
+  <div id="nameW" class="hide"><label>Full name</label><input id="name"></div>
+  <label>Email</label><input id="email" type="email">
+  <label>Password</label><input id="pass" type="password">
+  <button onclick="doAuth()" id="authB">Sign in</button>
+  <p class="msg">Need an account? <button class="link" onclick="toggle()" id="tg">Create one</button></p>
+  <div id="authM" class="msg err"></div>
+</section>
+
+<div id="appV" class="hide">
+  <div class="card">
+    <h2>Your payment channels</h2>
+    <div id="chans"></div>
+    <button class="sec" onclick="document.getElementById('newC').classList.toggle('hide')">+ New channel</button>
+    <div id="newC" class="hide">
+      <div class="row">
+        <div><label>Channel name</label><input id="cn" placeholder="e.g. Mama Njeri Shop"></div>
+        <div><label>Type</label><select id="ct" onchange="typeChg()"><option value="till">Till (Buy Goods)</option><option value="paybill">Paybill</option></select></div>
+        <div><label id="rl">Till number</label><input id="cr" inputmode="numeric"></div>
+        <div id="scW"><label>Store / head office number</label><input id="cs" inputmode="numeric"></div>
+        <div><label>Daraja consumer key</label><input id="ck"></div>
+        <div><label>Daraja consumer secret</label><input id="cx" type="password"></div>
+        <div><label>Lipa na M-Pesa passkey</label><input id="cp" type="password"></div>
+        <div><label>Environment</label><select id="ce"><option value="sandbox">Sandbox (testing)</option><option value="production">Production (live)</option></select></div>
+      </div>
+      <button onclick="addChan()">Save channel</button>
+      <div id="chM" class="msg"></div>
+    </div>
+  </div>
+
+  <div id="payC" class="card hide">
+    <h2>Request payment: <span id="selN"></span></h2>
+    <div class="row">
+      <div><label>Customer phone</label><input id="ph" placeholder="0712345678" inputmode="tel"></div>
+      <div><label>Amount (KES)</label><input id="am" type="number" min="1"></div>
+    </div>
+    <label>Reference (optional)</label><input id="rf" maxlength="12">
+    <button onclick="pay()">Send STK push</button>
+    <div id="pM" class="msg"></div>
+    <h2 style="margin-top:20px">Transactions</h2>
+    <div class="tw"><table><thead><tr><th>Time</th><th>Phone</th><th>Amount</th><th>Status</th><th>Receipt</th></tr></thead><tbody id="tx"></tbody></table></div>
+  </div>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);let reg=false,sel=null,timer=null;
+const api=async(u,m='GET',b)=>{const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Something went wrong');return d};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toggle(){reg=!reg;$('authT').textContent=reg?'Create account':'Sign in';$('authB').textContent=reg?'Create account':'Sign in';$('tg').textContent=reg?'Sign in instead':'Create one';$('nameW').classList.toggle('hide',!reg);$('authM').textContent=''}
+async function doAuth(){try{const d=await api(reg?'/api/register':'/api/login','POST',{name:$('name').value,email:$('email').value,password:$('pass').value});enter(d.name)}catch(e){$('authM').textContent=e.message}}
+function enter(n){$('authV').classList.add('hide');$('appV').classList.remove('hide');$('who').classList.remove('hide');$('uname').textContent=n;load()}
+async function logout(){await api('/api/logout','POST');clearInterval(timer);location.reload()}
+function typeChg(){const t=$('ct').value==='till';$('scW').classList.toggle('hide',!t);$('rl').textContent=t?'Till number':'Paybill number'}
+async function load(){const l=await api('/api/channels');$('chans').innerHTML=l.length?l.map(c=>`<div class="chan ${sel==c.id?'sel':''}" onclick="pick(${c.id},'${esc(c.name).replace(/'/g,'')}')"><div><b>${esc(c.name)}</b><br><small>${c.type} ${esc(c.receiver)} · ${c.env}</small></div><button class="sec" onclick="event.stopPropagation();del(${c.id})">Delete</button></div>`).join(''):'<p class="msg">No channels yet. Create your first one below.</p>'}
+async function addChan(){try{await api('/api/channels','POST',{name:$('cn').value,type:$('ct').value,receiver:$('cr').value,shortcode:$('cs').value,key:$('ck').value,secret:$('cx').value,passkey:$('cp').value,env:$('ce').value});['cn','cr','cs','ck','cx','cp'].forEach(i=>$(i).value='');$('chM').className='msg ok';$('chM').textContent='Channel saved.';load()}catch(e){$('chM').className='msg err';$('chM').textContent=e.message}}
+async function del(id){if(!confirm('Delete this channel and its transactions?'))return;await api('/api/channels/'+id,'DELETE');if(sel==id){sel=null;$('payC').classList.add('hide')}load()}
+function pick(id,n){sel=id;$('selN').textContent=n;$('payC').classList.remove('hide');load();txs();clearInterval(timer);timer=setInterval(txs,4000)}
+async function pay(){$('pM').className='msg';$('pM').textContent='Sending...';try{const d=await api(`/api/channels/${sel}/pay`,'POST',{phone:$('ph').value,amount:$('am').value,reference:$('rf').value});$('pM').className='msg ok';$('pM').textContent=d.message;txs()}catch(e){$('pM').className='msg err';$('pM').textContent=e.message}}
+async function txs(){if(!sel)return;const l=await api(`/api/channels/${sel}/transactions`);$('tx').innerHTML=l.map(t=>`<tr><td>${esc(t.created_at)}</td><td>${esc(t.phone)}</td><td>${t.amount}</td><td><span class="b ${t.status}" title="${esc(t.message)}">${t.status}</span></td><td>${esc(t.receipt)}</td></tr>`).join('')||'<tr><td colspan="5">No transactions yet</td></tr>'}
+api('/api/me').then(d=>enter(d.name)).catch(()=>{});
+</script>
+</body>
+</html>
